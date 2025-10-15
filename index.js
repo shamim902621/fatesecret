@@ -4,6 +4,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import querystring from "querystring";
+import https from "https";
+
 
 dotenv.config();
 const app = express();
@@ -92,25 +94,55 @@ app.get("/food/search", async (req, res) => {
 
 
 
-// Example route: get food by ID
 app.get("/food/:id", async (req, res) => {
   try {
     const foodId = req.params.id;
+
     const params = {
       method: "food.get.v2",
       food_id: foodId,
       format: "json",
     };
+
     const oauthParams = getOAuthParams("GET", FATSECRET_BASE_URL, params);
     const fullParams = { ...params, ...oauthParams };
 
-    const response = await axios.get(FATSECRET_BASE_URL, { params: fullParams });
-    res.json(response.data);
+    // 🛡️ Use HTTPS agent to bypass SSL validation issues (temporary for local testing)
+    const agent = new https.Agent({ rejectUnauthorized: false });
+
+    const response = await axios.get(FATSECRET_BASE_URL, {
+      params: fullParams,
+      httpsAgent: agent,
+    });
+
+    const food = response.data?.food;
+    if (!food) {
+      return res.status(404).json({ error: "Food not found" });
+    }
+
+    // 🖼️ Extract images safely
+    let images = [];
+    if (food.food_images) {
+      if (Array.isArray(food.food_images.food_image)) {
+        images = food.food_images.food_image.map(img => img.image_url);
+      } else if (food.food_images.food_image?.image_url) {
+        images = [food.food_images.food_image.image_url];
+      }
+    }
+
+    res.json({
+      ...food,
+      images,
+    });
   } catch (error) {
-    console.error("FatSecret API Error:", error.response?.data || error.message);
-    res.status(500).json({ error: "Failed to fetch food data" });
+    console.error(
+      "FatSecret API Error:",
+      error.response?.data || error.message || error
+    );
+    res.status(500).json({ error: "Failed to fetch food details" });
   }
 });
+
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
