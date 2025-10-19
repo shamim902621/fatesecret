@@ -4,8 +4,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import querystring from "querystring";
-import https from "https";
-
 
 dotenv.config();
 const app = express();
@@ -81,13 +79,6 @@ app.get("/food/search", async (req, res) => {
     const detailResponse = await axios.get(FATSECRET_BASE_URL, { params: fullDetailParams });
 
     let foodDetail = detailResponse.data?.food || {};
-
-    // ✅ Convert servings array to object (pick first serving)
-    if (foodDetail.servings?.serving) {
-      if (Array.isArray(foodDetail.servings.serving)) {
-        foodDetail.servings.serving = foodDetail.servings.serving[0];
-      }
-    }
 
     res.json({ food: foodDetail });
   } catch (error) {
