@@ -16,7 +16,6 @@ const FATSECRET_BASE_URL = process.env.FATSECRET_BASE_URL;
 const FATSECRET_KEY = process.env.FATSECRET_KEY;
 const FATSECRET_SECRET = process.env.FATSECRET_SECRET;
 
-// Generate OAuth 1.0 signature for FatSecret API
 function getOAuthParams(method, url, extraParams = {}) {
   const oauthParams = {
     oauth_consumer_key: FATSECRET_KEY,
@@ -46,46 +45,57 @@ function getOAuthParams(method, url, extraParams = {}) {
 
   return { ...oauthParams, oauth_signature: signature };
 }
+
 app.get("/food/search", async (req, res) => {
   console.log("Search route called! Query:", req.query.q);
+
   try {
     const query = req.query.q;
-    const searchParams = { method: "foods.search", search_expression: query, format: "json" };
+    const searchParams = {
+      method: "foods.search",
+      search_expression: query,
+      format: "json",
+    };
+
     const searchOauth = getOAuthParams("GET", FATSECRET_BASE_URL, searchParams);
     const fullSearchParams = { ...searchParams, ...searchOauth };
 
+    // Search foods
     const searchResponse = await axios.get(FATSECRET_BASE_URL, { params: fullSearchParams });
-    const foods = searchResponse.data.foods?.food || [];
 
-    const foodsWithImages = await Promise.all(
-      foods.map(async (food) => {
-        try {
-          const detailParams = { method: "food.get.v2", food_id: food.food_id, format: "json" };
-          const detailOauth = getOAuthParams("GET", FATSECRET_BASE_URL, detailParams);
-          const fullDetailParams = { ...detailParams, ...detailOauth };
+    let foods = searchResponse.data.foods?.food;
 
-          const detailResponse = await axios.get(FATSECRET_BASE_URL, { params: fullDetailParams });
-          const detailFood = detailResponse.data.food || {};
+    //Normalize: handle if it's an object or array
+    if (!foods) {
+      return res.status(404).json({ error: "No food data found" });
+    }
+    if (!Array.isArray(foods)) {
+      foods = [foods];
+    }
 
-          // Extract images safely
-          let images = [];
-          if (detailFood.food_images) {
-            if (Array.isArray(detailFood.food_images.food_image)) {
-              images = detailFood.food_images.food_image.map(img => img.image_url);
-            } else if (detailFood.food_images.food_image?.image_url) {
-              images = [detailFood.food_images.food_image.image_url];
-            }
-          }
+    //Pick the first food
+    const firstFood = foods[0];
 
-          return { ...food, images };
-        } catch (err) {
-          console.error("Error fetching food detail:", err.message);
-          return { ...food, images: [] };
-        }
-      })
-    );
+    //Get detailed info for that food
+    const detailParams = {
+      method: "food.get.v2",
+      food_id: firstFood.food_id,
+      format: "json",
+    };
+    const detailOauth = getOAuthParams("GET", FATSECRET_BASE_URL, detailParams);
+    const fullDetailParams = { ...detailParams, ...detailOauth };
 
-    res.json({ foods: foodsWithImages });
+    const detailResponse = await axios.get(FATSECRET_BASE_URL, { params: fullDetailParams });
+
+    //Handle single-object detail or nested food object
+    const foodDetail =
+      detailResponse.data?.food ||
+      detailResponse.data?.foods?.food ||
+      detailResponse.data ||
+      {};
+
+    //Return consistent single-object format
+    res.json({ food: foodDetail });
   } catch (error) {
     console.error("FatSecret API Error:", error.response?.data || error.message);
     res.status(500).json({ error: "Failed to fetch data from FatSecret" });
@@ -94,12 +104,14 @@ app.get("/food/search", async (req, res) => {
 
 
 
+
+
 app.get("/food/:id", async (req, res) => {
   try {
     const foodId = req.params.id;
 
     const params = {
-      method: "food.get.v2",
+      method: "food.get.v3",
       food_id: foodId,
       format: "json",
     };
@@ -107,7 +119,7 @@ app.get("/food/:id", async (req, res) => {
     const oauthParams = getOAuthParams("GET", FATSECRET_BASE_URL, params);
     const fullParams = { ...params, ...oauthParams };
 
-    // 🛡️ Use HTTPS agent to bypass SSL validation issues (temporary for local testing)
+    // 🛡 Use HTTPS agent to bypass SSL validation issues (temporary for local testing)
     const agent = new https.Agent({ rejectUnauthorized: false });
 
     const response = await axios.get(FATSECRET_BASE_URL, {
@@ -119,8 +131,6 @@ app.get("/food/:id", async (req, res) => {
     if (!food) {
       return res.status(404).json({ error: "Food not found" });
     }
-
-    // 🖼️ Extract images safely
     let images = [];
     if (food.food_images) {
       if (Array.isArray(food.food_images.food_image)) {
@@ -146,3 +156,4 @@ app.get("/food/:id", async (req, res) => {
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
