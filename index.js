@@ -79,6 +79,12 @@ app.get("/food/search", async (req, res) => {
     const detailResponse = await axios.get(FATSECRET_BASE_URL, { params: fullDetailParams });
 
     let foodDetail = detailResponse.data?.food || {};
+    if (foodDetail.servings?.serving) {
+  if (Array.isArray(foodDetail.servings.serving)) {
+    // ✅ convert array to single object (e.g., the first serving)
+    foodDetail.servings.serving = foodDetail.servings.serving[0];
+  }
+}
 
     res.json({ food: foodDetail });
   } catch (error) {
