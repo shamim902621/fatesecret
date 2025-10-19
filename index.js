@@ -44,43 +44,22 @@ function getOAuthParams(method, url, extraParams = {}) {
   return { ...oauthParams, oauth_signature: signature };
 }
 
-app.get("/food/search", async (req, res) => {
-  try {
-    const query = req.query.q;
-    if (!query) return res.status(400).json({ error: "Missing query" });
 
-    const searchParams = {
-      method: "foods.search",
+app.get("/food/search", async (req, res) => {
+console.log("Search route called! Query:", req.query.q);  try {
+    const query = req.query.q;
+    const method = "foods.search";
+    const params = {
+      method,
       search_expression: query,
       format: "json",
     };
-    const searchOauth = getOAuthParams("GET", FATSECRET_BASE_URL, searchParams);
-    const fullSearchParams = { ...searchParams, ...searchOauth };
 
-    // Search foods
-    const searchResponse = await axios.get(FATSECRET_BASE_URL, { params: fullSearchParams });
+    const oauthParams = getOAuthParams("GET", FATSECRET_BASE_URL, params);
+    const fullParams = { ...params, ...oauthParams };
 
-    let foods = searchResponse.data.foods?.food;
-
-    if (!foods) return res.status(404).json({ error: "No food data found" });
-    if (!Array.isArray(foods)) foods = [foods];
-
-    const firstFood = foods[0];
-
-    // Get detailed info
-    const detailParams = {
-      method: "food.get.v2",
-      food_id: firstFood.food_id,
-      format: "json",
-    };
-    const detailOauth = getOAuthParams("GET", FATSECRET_BASE_URL, detailParams);
-    const fullDetailParams = { ...detailParams, ...detailOauth };
-
-    const detailResponse = await axios.get(FATSECRET_BASE_URL, { params: fullDetailParams });
-
-    let foodDetail = detailResponse.data?.food || {};
-    
-    res.json({ food: foodDetail });
+    const response = await axios.get(FATSECRET_BASE_URL, { params: fullParams });
+    res.json(response.data);
   } catch (error) {
     console.error("FatSecret API Error:", error.response?.data || error.message);
     res.status(500).json({ error: "Failed to fetch data from FatSecret" });
