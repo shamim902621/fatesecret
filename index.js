@@ -47,16 +47,15 @@ function getOAuthParams(method, url, extraParams = {}) {
 }
 
 app.get("/food/search", async (req, res) => {
-  console.log("Search route called! Query:", req.query.q);
-
   try {
     const query = req.query.q;
+    if (!query) return res.status(400).json({ error: "Missing query" });
+
     const searchParams = {
       method: "foods.search",
       search_expression: query,
       format: "json",
     };
-
     const searchOauth = getOAuthParams("GET", FATSECRET_BASE_URL, searchParams);
     const fullSearchParams = { ...searchParams, ...searchOauth };
 
@@ -65,18 +64,12 @@ app.get("/food/search", async (req, res) => {
 
     let foods = searchResponse.data.foods?.food;
 
-    //Normalize: handle if it's an object or array
-    if (!foods) {
-      return res.status(404).json({ error: "No food data found" });
-    }
-    if (!Array.isArray(foods)) {
-      foods = [foods];
-    }
+    if (!foods) return res.status(404).json({ error: "No food data found" });
+    if (!Array.isArray(foods)) foods = [foods];
 
-    //Pick the first food
     const firstFood = foods[0];
 
-    //Get detailed info for that food
+    // Get detailed info
     const detailParams = {
       method: "food.get.v2",
       food_id: firstFood.food_id,
@@ -87,23 +80,21 @@ app.get("/food/search", async (req, res) => {
 
     const detailResponse = await axios.get(FATSECRET_BASE_URL, { params: fullDetailParams });
 
-    //Handle single-object detail or nested food object
-    const foodDetail =
-      detailResponse.data?.food ||
-      detailResponse.data?.foods?.food ||
-      detailResponse.data ||
-      {};
+    let foodDetail = detailResponse.data?.food || {};
 
-    //Return consistent single-object format
+    // ✅ Convert servings array to object (pick first serving)
+    if (foodDetail.servings?.serving) {
+      if (Array.isArray(foodDetail.servings.serving)) {
+        foodDetail.servings.serving = foodDetail.servings.serving[0];
+      }
+    }
+
     res.json({ food: foodDetail });
   } catch (error) {
     console.error("FatSecret API Error:", error.response?.data || error.message);
     res.status(500).json({ error: "Failed to fetch data from FatSecret" });
   }
 });
-
-
-
 
 
 app.get("/food/:id", async (req, res) => {
@@ -115,22 +106,14 @@ app.get("/food/:id", async (req, res) => {
       food_id: foodId,
       format: "json",
     };
-
     const oauthParams = getOAuthParams("GET", FATSECRET_BASE_URL, params);
     const fullParams = { ...params, ...oauthParams };
 
-    // 🛡 Use HTTPS agent to bypass SSL validation issues (temporary for local testing)
-    const agent = new https.Agent({ rejectUnauthorized: false });
+    const response = await axios.get(FATSECRET_BASE_URL, { params: fullParams });
 
-    const response = await axios.get(FATSECRET_BASE_URL, {
-      params: fullParams,
-      httpsAgent: agent,
-    });
+    let food = response.data?.food;
+    if (!food) return res.status(404).json({ error: "Food not found" });
 
-    const food = response.data?.food;
-    if (!food) {
-      return res.status(404).json({ error: "Food not found" });
-    }
     let images = [];
     if (food.food_images) {
       if (Array.isArray(food.food_images.food_image)) {
@@ -140,20 +123,24 @@ app.get("/food/:id", async (req, res) => {
       }
     }
 
+    // ✅ Convert servings array to object
+    if (food.servings?.serving) {
+      if (Array.isArray(food.servings.serving)) {
+        food.servings.serving = food.servings.serving[0];
+      }
+    }
+
     res.json({
       ...food,
       images,
     });
   } catch (error) {
-    console.error(
-      "FatSecret API Error:",
-      error.response?.data || error.message || error
-    );
+    console.error("FatSecret API Error:", error.response?.data || error.message);
     res.status(500).json({ error: "Failed to fetch food details" });
   }
 });
 
 
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
